@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>格林–勞里｜iPhone 手機版（目標水平線修正）</title>
+<style>
+:root{ --bg:#0b1220; --panel:#0f172a; --ink:#e5e7eb; --muted:#94a3b8; --line:#1e293b; --accent:#2563eb; --ok:#22c55e; --warn:#f59e0b; --chip:#111827;}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","Segoe UI",Roboto,"Microsoft JhengHei",sans-serif}
+body{padding: env(safe-area-inset-top) env(safe-area-inset-right) calc(6px + env(safe-area-inset-bottom)) env(safe-area-inset-left);}
+header{padding:10px 12px 6px 12px}
+h1{font-size:18px;margin:0;font-weight:800}
+.small{font-size:12px;color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:8px 12px;padding:10px;box-shadow:0 8px 28px rgba(2,8,23,.32)}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+label{display:block;font-size:12px;color:var(--muted);margin:6px 0 4px}
+input,select{width:100%;padding:10px 10px;border-radius:10px;border:1px solid #22314a;background:#0b1328;color:#e8eefc}
+button{border:1px solid #22314a;background:#0b1328;color:#e5e7eb;border-radius:12px;padding:10px 12px}
+button.primary{background:var(--accent);border-color:var(--accent);color:white}
+.kv{display:flex;justify-content:space-between;align-items:baseline;margin:4px 0}
+.kv .k{font-size:12px;color:var(--muted)}
+.kv .v{font-size:18px;font-weight:700}
+.playbar{display:flex;gap:8px} .playbar button{flex:1} .playbar .ghost{background:var(--chip)}
+#board{height:40vh;min-height:280px} #chartWrap{height:28vh;min-height:190px} svg,canvas{width:100%;height:100%;display:block}
+.legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:13px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+@media (min-width:431px){main{max-width:920px;margin:0 auto} #board{height:44vh} #chartWrap{height:32vh}}
+</style>
+</head>
+<body>
+<header><h1>格林–勞里模型｜手機版</h1><div class="small">目標線固定為水平參考線（單區 P* ／ 多區收斂 ΣP†）</div></header>
+<main>
+  <section class="card" id="ctrl">
+    <div class="row">
+      <div><label>模式</label><select id="mode"><option value="single">單區</option><option value="multi" selected>多區</option></select></div>
+      <div><label>節點數</label><select id="nodes"><option value="1">1</option><option value="3" selected>3</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>ε（收斂門檻）</label><input id="eps" type="number" value="0.005" step="0.0005"/></div>
+      <div><label>速度（ms/步）</label><input id="speed" type="number" value="450" step="50"/></div>
+    </div>
+    <div class="row">
+      <div><label>自動步數上限（0=無上限）</label><input id="maxSteps" type="number" value="30" step="5" min="0"/></div>
+      <div><label>標籤外距（px）</label><input id="labelPad" type="number" value="12" step="2" min="8"/></div>
+    </div>
+    <div id="box1" style="display:none">
+      <div class="row"><div><label>B（總）</label><input id="B_total" type="number" value="8000" step="100"/></div>
+        <div><label>m</label><input id="m_single" type="number" value="1.84" step="0.01"/></div></div>
+      <div class="row"><div><label>r</label><input id="r_single" type="number" value="0.0425" step="0.001"/></div></div>
+    </div>
+    <div id="box2">
+      <div class="row">
+        <div><label>B_A</label><input id="B_A" type="number" value="0" step="100"/></div>
+        <div><label>B_B</label><input id="B_B" type="number" value="6000" step="100"/></div>
+        <div><label>B_C</label><input id="B_C" type="number" value="2000" step="100"/></div>
+      </div>
+      <div class="row">
+        <div><label>m</label><input id="m_multi" type="number" value="1.84" step="0.01"/></div>
+        <div><label>r</label><input id="r_multi" type="number" value="0.0425" step="0.001"/></div>
+        <div><label>β</label><input id="beta" type="number" value="0.06" step="0.005"/></div>
+      </div>
+    </div>
+    <div class="playbar" style="margin-top:8px">
+      <button id="play" class="primary">▶ 播放</button><button id="step">↷ 單步</button><button id="reset" class="ghost">⟲ 重設</button>
+    </div>
+    <div class="kv"><div class="k">ΣP（總人口）</div><div class="v" id="sumP">0</div></div>
+    <div class="kv"><div class="k">ΣS（總服務）</div><div class="v" id="sumS">0</div></div>
+    <div class="kv"><div class="k">t（回合）</div><div class="v" id="tt">0</div></div>
+    <div class="kv"><div class="k">目標（單區 P* ／ 多區 ΣP†）</div><div class="v" id="targetNow">—</div></div>
+    <div class="legend">
+      <span class="sw" style="background:#60a5fa"></span> P_t（當前總人口）
+      <span class="sw" style="background:#22c55e"></span> S_t（當前服務就業）
+      <span class="sw" style="background:#f59e0b"></span> 目標（水平線）
+    </div>
+  </section>
+  <section class="card" id="board"><svg id="svg"></svg></section>
+  <section class="card" id="chartWrap"><canvas id="chart"></canvas></section>
+</main>
+
+<script>
+const el = id => document.getElementById(id);
+const svg = document.getElementById('svg'); const W=()=>svg.clientWidth, H=()=>svg.clientHeight;
+const centers3={A:[0.2,0.55],B:[0.5,0.48],C:[0.8,0.55]}; let nodes=[{id:'A',name:'A',P:0,S:0,B:0},{id:'B',name:'B',P:0,S:0,B:0},{id:'C',name:'C',P:0,S:0,B:0}];
+function lerp(a,b,t){return a+(b-a)*t} function colorFromP(P,Pmax){const t=Math.max(0,Math.min(1,P/(Pmax||1)));const c1=[0x93,0xc5,0xfd],c2=[0x1d,0x4e,0xd8];const r=Math.round(lerp(c1[0],c2[0],t)),g=Math.round(lerp(c1[1],c2[1],t)),b=Math.round(lerp(c1[2],c2[2],t));return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;}
+function radiusFromP(P){const s=Math.sqrt(Math.max(1,P));return 8+Math.min(64,s*0.55);}
+function draw(){ const Pmax=Math.max(...nodes.map(n=>n.P),1); svg.innerHTML=''; const bg=document.createElementNS('http://www.w3.org/2000/svg','rect'); bg.setAttribute('width','100%');bg.setAttribute('height','100%');bg.setAttribute('fill','#0b1220'); svg.appendChild(bg);
+  nodes.forEach(n=>{ n.r=radiusFromP(n.P); n.color=colorFromP(n.P,Pmax); const pos=centers3[n.id]; const cx=pos[0]*W(), cy=pos[1]*H();
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g'); const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',n.r);c.setAttribute('fill',n.color);c.setAttribute('stroke','#0b1328');c.setAttribute('stroke-width','1'); g.appendChild(c);
+    const name=document.createElementNS('http://www.w3.org/2000/svg','text'); name.setAttribute('x',cx);name.setAttribute('y',cy+n.r+12);name.setAttribute('fill','#cbd5e1');name.setAttribute('font-size','12');name.setAttribute('text-anchor','middle');name.textContent=n.name; g.appendChild(name);
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('x',cx);t.setAttribute('y',cy+n.r+22);t.setAttribute('fill','#e5e7eb');t.setAttribute('font-size','12');t.setAttribute('text-anchor','middle');
+    ['P：'+Math.round(n.P).toLocaleString(),'S：'+Math.round(n.S).toLocaleString(),'B：'+Math.round(n.B).toLocaleString()].forEach((ln,i)=>{const s=document.createElementNS('http://www.w3.org/2000/svg','tspan');s.setAttribute('x',cx);s.setAttribute('dy',i===0?0:16);s.textContent=ln;t.appendChild(s);}); g.appendChild(t);
+    svg.appendChild(g); }); }
+addEventListener('resize', draw);
+
+/* Chart: target horizontal */
+const cvs=document.getElementById('chart'); const ctx=cvs.getContext('2d');
+let series={labels:[0],P:[0],S:[0]}, targetConstVal=0, targetName='ΣP†', mode='multi', timer=null, steps=0, Pm={A:0,B:0,C:0}, Sm={A:0,B:0,C:0};
+function chartResize(){cvs.width=cvs.clientWidth; cvs.height=cvs.clientHeight;}
+function drawChart(){
+  chartResize(); const w=cvs.width,h=cvs.height, pad=36, rpad=56, bpad=24;
+  ctx.clearRect(0,0,w,h);
+  const maxY=Math.max(1,...series.P,...series.S,targetConstVal||0);
+  const y=v=>h-bpad-(v/maxY)*(h-bpad-pad); const x=i=>{const n=Math.max(1,series.labels.length-1); return pad+(i/n)*(w-pad-rpad);};
+  // grid
+  ctx.strokeStyle='rgba(148,163,184,0.18)'; ctx.lineWidth=1; ctx.fillStyle='#9fb2d3'; ctx.font='12px system-ui';
+  for(let k=0;k<=5;k++){const val=Math.round(maxY*k/5); const gy=y(val); ctx.beginPath(); ctx.moveTo(pad,gy); ctx.lineTo(w-rpad,gy); ctx.stroke(); if(k>0) ctx.fillText(val.toLocaleString(),6,gy+4);}
+  ctx.fillStyle='#e5e7eb'; ctx.fillText('t', w-18, h-6);
+  // P
+  ctx.strokeStyle='#60a5fa'; ctx.lineWidth=2; ctx.beginPath(); series.P.forEach((v,i)=>{const X=x(i),Y=y(v); if(i===0) ctx.moveTo(X,Y); else ctx.lineTo(X,Y);}); ctx.stroke();
+  // S
+  ctx.strokeStyle='#22c55e'; ctx.lineWidth=2; ctx.beginPath(); series.S.forEach((v,i)=>{const X=x(i),Y=y(v); if(i===0) ctx.moveTo(X,Y); else ctx.lineTo(X,Y);}); ctx.stroke();
+  // Target horizontal line across full width (two points only)
+  if(targetConstVal>0){
+    ctx.save(); ctx.setLineDash([7,5]); ctx.strokeStyle='#f59e0b'; ctx.lineWidth=2.4; ctx.shadowColor='rgba(245,158,11,.35)'; ctx.shadowBlur=6;
+    ctx.beginPath(); ctx.moveTo(pad, y(targetConstVal)); ctx.lineTo(w-rpad, y(targetConstVal)); ctx.stroke(); ctx.restore();
+    // right label
+    const rY=y(targetConstVal); const text=Math.round(targetConstVal).toLocaleString();
+    ctx.fillStyle='#cbd5e1'; const tw=ctx.measureText(text).width;
+    ctx.fillText(text, w-8-tw, rY-6);
+  }
+}
+function pushPoint(p,s){
+  series.labels.push(series.labels.length); series.P.push(p); series.S.push(s); drawChart();
+  el('sumP').textContent=Math.round(p).toLocaleString(); el('sumS').textContent=Math.round(s).toLocaleString();
+  el('targetNow').textContent = targetConstVal>0? (Math.round(targetConstVal).toLocaleString()+'（'+targetName+'）') : '—';
+}
+
+/* Model */
+function setMultiValues(P,S,B){ nodes.forEach(n=>{ n.P=P[n.id]||0; n.S=S[n.id]||0; n.B=B[n.id]||0; }); draw(); }
+function setSingleP(P){ nodes=[{id:'B',name:'城市',P:0,S:0,B:0}]; nodes[0].P=P; nodes[0].S=(+el('r_single').value)*P; nodes[0].B=+el('B_total').value; draw(); }
+function calcStar(){const m=+el('m_single').value,r=+el('r_single').value,B=+el('B_total').value; return (m*B)/(1-m*r);}
+
+function step(){
+  if(mode==='single'){
+    const m=+el('m_single').value, r=+el('r_single').value, B=+el('B_total').value;
+    const prev=nodes[0]?.P||0, Snext=r*prev, Pnext=m*(B+Snext);
+    setSingleP(Pnext);
+    pushPoint(Pnext,Snext);
+    // single: target is fixed P*
+    targetConstVal = calcStar(); targetName='P*'; drawChart();
+    const rel = Math.abs(Pnext-targetConstVal)/(targetConstVal||1); return rel;
+  }else{
+    const m=+el('m_multi').value, r=+el('r_multi').value, beta=+el('beta').value;
+    const B={A:+el('B_A').value,B:+el('B_B').value,C:+el('B_C').value};
+    const pos=centers3, ids=['A','B','C']; const px=id=>{const p=pos[id];return [p[0]*W(),p[1]*H()];}
+    const Cmat={}; ids.forEach(i=>{Cmat[i]={}; ids.forEach(j=>{const [x1,y1]=px(i),[x2,y2]=px(j); Cmat[i][j]=Math.hypot(x1-x2,y1-y2)/120;});});
+    const J={A:B.A+Sm.A,B:B.B+Sm.B,C:B.C+Sm.C};
+    const q={}; ids.forEach(j=>{let den=0; ids.forEach(i=> den+=Math.exp(-beta*Cmat[i][j])); ids.forEach(i=>{q[i]=q[i]||{}; q[i][j]=Math.exp(-beta*Cmat[i][j])/(den||1);});});
+    const Pn={A:0,B:0,C:0}; ids.forEach(i=>{let workers=0; ids.forEach(j=> workers+=J[j]*q[i][j]); Pn[i]=m*workers;});
+    const Sn={A:r*Pn.A,B:r*Pn.B,C:r*Pn.C};
+    const maxDen=Math.max(1,Pn.A,Pn.B,Pn.C); const delta=Math.max(Math.abs(Pn.A-Pm.A),Math.abs(Pn.B-Pm.B),Math.abs(Pn.C-Pm.C))/maxDen;
+    Pm=Pn; Sm=Sn; const sumP=Pm.A+Pm.B+Pm.C, sumS=Sm.A+Sm.B+Sm.C;
+    setMultiValues(Pm,Sm,B); pushPoint(sumP,sumS);
+    // if converged, lock target as constant
+    if(delta < (+el('eps').value||0.005)){ if(!targetConstVal) targetConstVal = sumP; targetName='ΣP†'; drawChart(); }
+    return delta;
+  }
+}
+
+function hardReset(){
+  clearInterval(timer); timer=null; steps=0; series={labels:[0],P:[0],S:[0]}; targetConstVal=0; targetName='ΣP†';
+  el('sumP').textContent='0'; el('sumS').textContent='0'; el('tt').textContent='0'; el('targetNow').textContent='—';
+  if(mode==='single'){
+    nodes=[{id:'B',name:'城市',P:0,S:0,B:0}]; setSingleP(0); targetConstVal = calcStar(); targetName='P*'; drawChart(); el('targetNow').textContent=Math.round(targetConstVal).toLocaleString()+'（P*）';
+  }else{
+    nodes=[{id:'A',name:'A',P:0,S:0,B:0},{id:'B',name:'B',P:0,S:0,B:0},{id:'C',name:'C',P:0,S:0,B:0}]; Pm={A:0,B:0,C:0}; Sm={A:0,B:0,C:0}; setMultiValues(Pm,Sm,{A:0,B:0,C:0}); drawChart();
+  }
+}
+
+function init(){
+  mode=el('mode').value; hardReset(); draw();
+  el('mode').addEventListener('change', e=>{ mode=e.target.value; document.getElementById('box1').style.display = mode==='single'?'':'none'; document.getElementById('box2').style.display = mode==='multi'?'':'none'; hardReset(); });
+  el('nodes').addEventListener('change', ()=>{});
+  el('labelPad').addEventListener('change', draw);
+  el('play').onclick=()=>{ if(timer){clearInterval(timer); timer=null; el('play').textContent='▶ 播放'; return;} steps=0; el('play').textContent='⏸ 暫停';
+    timer=setInterval(()=>{ const eps=+el('eps').value||0.005; const cap=+el('maxSteps').value||0; const diff=step(); const t=+el('tt').textContent|0; el('tt').textContent=String(t+1); steps++; if(diff<eps || (cap>0 && steps>=cap)){ clearInterval(timer); timer=null; el('play').textContent='▶ 播放'; if(mode==='multi' && !targetConstVal){ targetConstVal = series.P[series.P.length-1]; targetName='ΣP†'; drawChart(); } } }, +el('speed').value||450);
+  };
+  el('step').onclick=()=>{ const diff=step(); el('tt').textContent=String((+el('tt').textContent|0)+1); if(mode==='multi' && diff < (+el('eps').value||0.005) && !targetConstVal){ targetConstVal = series.P[series.P.length-1]; targetName='ΣP†'; drawChart(); } };
+  el('reset').onclick=hardReset;
+  ['B_total','m_single','r_single','eps','maxSteps'].forEach(id=> document.getElementById(id)?.addEventListener('change', hardReset));
+  ['B_A','B_B','B_C','m_multi','r_multi','beta','eps','maxSteps'].forEach(id=> document.getElementById(id)?.addEventListener('change', hardReset));
+}
+init();
+</script>
+</body>
+</html>
